@@ -48,7 +48,7 @@ export function WalletRegistrationForm({ onComplete }: { onComplete: (userId: st
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const apiUrl = import.meta.env.VITE_BACKEND_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
       console.log('Making request to:', `${apiUrl}/register-farmer`);
       
       const res = await fetch(`${apiUrl}/register-farmer`, {
@@ -188,7 +188,7 @@ export function WalletRegistrationStatus({ userId }: { userId: string }) {
   const load = async () => {
     setLoading(true); setError(null);
     try {
-      const base = import.meta.env.VITE_API_BASE_URL || '/.netlify/functions/api';
+      const base = import.meta.env.VITE_BACKEND_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/.netlify/functions/api';
       const res = await fetch(`${base}/check-funding?userId=${encodeURIComponent(userId)}`);
       if (!res.ok) throw new Error('Failed to load funding status');
       const data = await res.json();

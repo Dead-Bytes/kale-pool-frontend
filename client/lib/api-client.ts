@@ -35,9 +35,12 @@ import {
 // Environment configuration
 // Backend (Express) base URL defaults to 3000; Pooler (Fastify) base URL defaults to 3001
 const BACKEND_API_BASE_URL =
-  import.meta.env.VITE_BACKEND_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+  import.meta.env.VITE_BACKEND_API_BASE_URL || 
+  import.meta.env.VITE_API_BASE_URL || 
+  (import.meta.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000');
 const POOLER_API_BASE_URL =
-  import.meta.env.VITE_POOLER_API_BASE_URL || 'http://localhost:3001';
+  import.meta.env.VITE_POOLER_API_BASE_URL || 
+  (import.meta.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001');
 const DEFAULT_TIMEOUT = 10000;
 const MAX_RETRIES = 3;
 
