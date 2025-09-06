@@ -266,7 +266,11 @@ export function useCurrentUser(options?: UseQueryOptions<any, APIClientError>) {
   return useQuery({
     queryKey: ['current-user'],
     queryFn: () => apiClient.getMe(),
-    staleTime: 30000,
+    staleTime: 60000, // 1 minute - user data changes less frequently
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
@@ -298,6 +302,10 @@ export function useFarmerSummary(farmerId?: string, window?: '24h' | '7d' | '30d
     queryFn: () => apiClient.getFarmerSummary(farmerId, window),
     enabled: !!farmerId,
     staleTime: 30000,
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
@@ -315,6 +323,10 @@ export function useFarmerPlantings(farmerId?: string, filters?: {
     queryFn: () => apiClient.getFarmerPlantings(farmerId, filters),
     enabled: !!farmerId,
     staleTime: 30000,
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
@@ -332,6 +344,10 @@ export function useFarmerHarvests(farmerId?: string, filters?: {
     queryFn: () => apiClient.getFarmerHarvests(farmerId, filters),
     enabled: !!farmerId,
     staleTime: 30000,
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
