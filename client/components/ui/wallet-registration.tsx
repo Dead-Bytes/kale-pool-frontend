@@ -51,7 +51,14 @@ export function WalletRegistrationForm({ onComplete }: { onComplete: (userId: st
       const apiUrl = import.meta.env.VITE_BACKEND_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
       console.log('Making request to:', `${apiUrl}/register-farmer`);
       
-      const res = await fetch(`${apiUrl}/register-farmer`, {
+      let url = `${apiUrl}/register-farmer`;
+      
+      // Add ngrok bypass parameter if using ngrok URL
+      if (apiUrl.includes('ngrok')) {
+        url += '?ngrok-skip-browser-warning=true';
+      }
+      
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -189,7 +196,14 @@ export function WalletRegistrationStatus({ userId }: { userId: string }) {
     setLoading(true); setError(null);
     try {
       const base = import.meta.env.VITE_BACKEND_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/.netlify/functions/api';
-      const res = await fetch(`${base}/check-funding?userId=${encodeURIComponent(userId)}`);
+      let url = `${base}/check-funding?userId=${encodeURIComponent(userId)}`;
+      
+      // Add ngrok bypass parameter if using ngrok URL
+      if (base.includes('ngrok')) {
+        url += '&ngrok-skip-browser-warning=true';
+      }
+      
+      const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to load funding status');
       const data = await res.json();
       setFunded(Boolean(data.funded));

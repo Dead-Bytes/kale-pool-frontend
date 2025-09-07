@@ -89,13 +89,31 @@ class APIClient {
       ...fetchConfig
     } = config;
 
-    const url = `${this.baseURL}${endpoint}`;
+    let url = `${this.baseURL}${endpoint}`;
     
     // Default headers
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       ...fetchConfig.headers,
     };
+    
+    // Add ngrok bypass for ngrok URLs
+    if (this.baseURL.includes('ngrok')) {
+      const method = fetchConfig.method || 'GET';
+      
+      // For GET requests, use header to avoid query parameter issues
+      if (method === 'GET') {
+        (headers as Record<string, string>)['ngrok-skip-browser-warning'] = 'true';
+        console.log('🔧 API Request URL (ngrok + header):', url);
+      } else {
+        // For POST/PUT/DELETE, use query parameter
+        const separator = url.includes('?') ? '&' : '?';
+        url += `${separator}ngrok-skip-browser-warning=true`;
+        console.log('🔧 API Request URL (ngrok + query):', url);
+      }
+    } else {
+      console.log('🔧 API Request URL (no ngrok):', url);
+    }
 
     // Add authentication headers
     if (!skipAuth) {
@@ -519,7 +537,13 @@ class APIClient {
 
   async getPoolerStatus(): Promise<PoolerStatusResponse> {
     // This endpoint lives on the Pooler service (port 3001)
-    const endpoint = `${this.poolerBaseURL}/pooler/status`;
+    let endpoint = `${this.poolerBaseURL}/pooler/status`;
+    
+    // Add ngrok bypass parameter if using ngrok URL
+    if (endpoint.includes('ngrok')) {
+      endpoint += '?ngrok-skip-browser-warning=true';
+    }
+    
     const response = await fetch(endpoint, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
