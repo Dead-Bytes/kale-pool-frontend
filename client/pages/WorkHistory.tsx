@@ -16,14 +16,14 @@ import {
   RefreshCw,
   TrendingUp,
   Users,
-  Clock,
   CheckCircle,
   XCircle,
   FileText,
-  BarChart3,
   AlertTriangle
 } from 'lucide-react';
-import { useFarmerSummary, useFarmerPlantings, useFarmerHarvests } from '@/hooks/use-api';
+import { useFarmerSummary, useFarmerPlantings, useFarmerHarvests, useCurrentUser } from '@/hooks/use-api';
+import { downloadWorkHistoryPDF } from '@/lib/pdf-generator';
+import { useToast } from '@/hooks/use-toast';
 
 // Work history data will be fetched from API
 interface WorkHistoryItem {
@@ -56,12 +56,13 @@ interface FarmerStats {
 }
 
 export default function WorkHistory() {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [poolerFilter, setPoolerFilter] = useState('all');
   const [timeRange, setTimeRange] = useState('7d');
   const [workHistory, setWorkHistory] = useState<WorkHistoryItem[]>([]);
   const [farmerStats, setFarmerStats] = useState<FarmerStats[]>([]);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   // Check if farmer ID exists in local storage
   const farmerId = localStorage.getItem('kale-pool-farmer-id');
@@ -75,6 +76,38 @@ export default function WorkHistory() {
     refetch: refetchSummary 
   } = useFarmerSummary(farmerId || undefined, timeRange as '24h' | '7d' | '30d' | 'all');
 
+  // Get user data for email
+  const { 
+    data: userData, 
+    isLoading: userLoading, 
+    error: userError 
+  } = useCurrentUser();
+
+  // Convert timeRange to date filters
+  const getDateRange = (range: string) => {
+    const now = new Date();
+    const to = now.toISOString();
+    
+    switch (range) {
+      case '24h':
+        const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        return { from: dayAgo.toISOString(), to };
+      case '7d':
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return { from: weekAgo.toISOString(), to };
+      case '30d':
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        return { from: monthAgo.toISOString(), to };
+      case '90d':
+        const quarterAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        return { from: quarterAgo.toISOString(), to };
+      default:
+        return undefined;
+    }
+  };
+
+  const dateRange = getDateRange(timeRange);
+
   const { 
     data: plantingsData, 
     isLoading: plantingsLoading, 
@@ -82,7 +115,8 @@ export default function WorkHistory() {
     refetch: refetchPlantings 
   } = useFarmerPlantings(farmerId || undefined, {
     status: statusFilter === 'all' ? undefined : statusFilter as 'success' | 'failed',
-    poolerId: poolerFilter === 'all' ? undefined : poolerFilter,
+    from: dateRange?.from,
+    to: dateRange?.to,
     page: 1,
     limit: 100
   });
@@ -94,13 +128,14 @@ export default function WorkHistory() {
     refetch: refetchHarvests 
   } = useFarmerHarvests(farmerId || undefined, {
     status: statusFilter === 'all' ? undefined : statusFilter as 'success' | 'failed',
-    poolerId: poolerFilter === 'all' ? undefined : poolerFilter,
+    from: dateRange?.from,
+    to: dateRange?.to,
     page: 1,
     limit: 100
   });
 
-  const isLoading = summaryLoading || plantingsLoading || harvestsLoading;
-  const hasError = summaryError || plantingsError || harvestsError;
+  const isLoading = summaryLoading || plantingsLoading || harvestsLoading || userLoading;
+  const hasError = summaryError || plantingsError || harvestsError || userError;
 
   // Debug logging for data structure issues
   useEffect(() => {
@@ -113,11 +148,39 @@ export default function WorkHistory() {
     if (harvestsData) {
       console.log('Harvests Data:', harvestsData);
     }
-  }, [farmerSummary, plantingsData, harvestsData]);
+    if (userData) {
+      console.log('User Data:', userData);
+    }
+  }, [farmerSummary, plantingsData, harvestsData, userData]);
 
-  const handleExport = () => {
-    // Implement CSV/PDF export
-    console.log('Exporting work history data...');
+  const handleExport = async () => {
+    if (!workHistory.length) {
+      toast({
+        title: "No Data Available",
+        description: "No work history data available to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingPDF(true);
+    try {
+      const farmerEmail = userData?.user?.email || undefined;
+      await downloadWorkHistoryPDF(workHistory, farmerEmail, timeRange);
+      toast({
+        title: "PDF Generated",
+        description: "Work history report has been downloaded successfully.",
+      });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to generate PDF report. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   const handleRefresh = () => {
@@ -140,7 +203,7 @@ export default function WorkHistory() {
               id: planting.id,
               blockIndex: planting.blockIndex || 0,
               status: planting.status === 'success' ? 'success' : 'failed',
-              amount: planting.stakeAmountHuman || '0',
+              amount: planting.stakeAmount || '0',
               timestamp: planting.plantedAt || new Date().toISOString(),
               poolerId: planting.poolerId || 'unknown',
               poolerName: planting.poolerName || 'Unknown Pooler',
@@ -182,9 +245,8 @@ export default function WorkHistory() {
                          work.poolerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          work.poolerId.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || work.status === statusFilter;
-    const matchesPooler = poolerFilter === 'all' || work.poolerId === poolerFilter;
     
-    return matchesSearch && matchesStatus && matchesPooler;
+    return matchesSearch && matchesStatus;
   });
 
   return (
@@ -210,7 +272,7 @@ export default function WorkHistory() {
       </div>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -245,21 +307,6 @@ export default function WorkHistory() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Avg Processing</p>
-                <p className="text-2xl font-bold">
-                  {isLoading ? <Skeleton className="h-8 w-16" /> : 
-                   `N/A`}
-                </p>
-              </div>
-              <Clock className="w-8 h-8 text-warning" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
                 <p className="text-sm font-medium text-muted-foreground">Total Rewards</p>
                 <p className="text-2xl font-bold">
                   {isLoading ? <Skeleton className="h-8 w-20" /> : 
@@ -285,21 +332,6 @@ export default function WorkHistory() {
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Peak Hour</p>
-                <p className="text-2xl font-bold">
-                  {isLoading ? <Skeleton className="h-8 w-16" /> : 
-                   'N/A'}
-                </p>
-              </div>
-              <BarChart3 className="w-8 h-8 text-warning" />
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Filters */}
@@ -311,7 +343,7 @@ export default function WorkHistory() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="lg:col-span-2">
               <label className="text-sm font-medium mb-2 block">Search</label>
               <div className="relative">
@@ -334,20 +366,6 @@ export default function WorkHistory() {
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
                   <SelectItem value="failed">Failed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">Pooler</label>
-              <Select value={poolerFilter} onValueChange={setPoolerFilter}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Poolers</SelectItem>
-                  <SelectItem value="main_pool">Main Pool</SelectItem>
-                  <SelectItem value="secondary_pool">Secondary Pool</SelectItem>
-                  <SelectItem value="test_pool">Test Pool</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -391,6 +409,7 @@ export default function WorkHistory() {
               {summaryError && <p className="text-sm mt-1">Summary Error: {summaryError.message}</p>}
               {plantingsError && <p className="text-sm mt-1">Plantings Error: {plantingsError.message}</p>}
               {harvestsError && <p className="text-sm mt-1">Harvests Error: {harvestsError.message}</p>}
+              {userError && <p className="text-sm mt-1">User Error: {userError.message}</p>}
             </div>
           </AlertDescription>
         </Alert>
@@ -400,8 +419,6 @@ export default function WorkHistory() {
       <Tabs defaultValue="history" className="space-y-4">
         <TabsList>
           <TabsTrigger value="history">Work History</TabsTrigger>
-          <TabsTrigger value="patterns">Work Patterns</TabsTrigger>
-          <TabsTrigger value="farmers">Farmer Performance</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
@@ -493,84 +510,17 @@ export default function WorkHistory() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="patterns" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Work Submission Patterns</CardTitle>
-              <CardDescription>
-                Analyze work patterns and trends over time
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 flex items-center justify-center border-2 border-dashed border-muted rounded-lg">
-                <div className="text-center">
-                  <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">Work Pattern Chart</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Chart showing work submission frequency and patterns over time
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="farmers" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Farmer Performance Rankings</CardTitle>
-              <CardDescription>
-                Track individual farmer participation and performance
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {farmerStats.length > 0 ? (
-                  farmerStats.map((farmer, index) => (
-                    <div key={farmer.farmerId} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center gap-4">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
-                          #{index + 1}
-                        </div>
-                        <div>
-                          <h3 className="font-medium font-mono">{farmer.farmerId}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            {farmer.submissions} submissions • {farmer.totalRewards.toLocaleString()} rewards
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <Badge variant={farmer.successRate > 95 ? 'default' : farmer.successRate > 90 ? 'secondary' : 'destructive'}>
-                          {farmer.successRate}% success
-                        </Badge>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No farmer performance data available</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Performance rankings will appear once farmers start submitting work
-                    </p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="reports" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Generate Reports</CardTitle>
               <CardDescription>
-                Create detailed reports for work history and farmer performance
+                Generate comprehensive work history reports
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 border rounded-lg">
+              <div className="max-w-md">
+                <div className="p-6 border rounded-lg">
                   <div className="flex items-center gap-3 mb-3">
                     <FileText className="w-5 h-5 text-primary" />
                     <h3 className="font-medium">Work History Report</h3>
@@ -578,51 +528,18 @@ export default function WorkHistory() {
                   <p className="text-sm text-muted-foreground mb-4">
                     Generate a comprehensive report of all work submissions for the selected time period.
                   </p>
-                  <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
-                    Generate PDF
-                  </Button>
-                </div>
-
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center gap-3 mb-3">
-                    <Users className="w-5 h-5 text-primary" />
-                    <h3 className="font-medium">Farmer Performance Report</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Create detailed performance analysis for individual farmers or farmer groups.
-                  </p>
-                  <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
-                    Generate PDF
-                  </Button>
-                </div>
-
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center gap-3 mb-3">
-                    <BarChart3 className="w-5 h-5 text-primary" />
-                    <h3 className="font-medium">Summary Report</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    High-level summary with key metrics and trends for management review.
-                  </p>
-                  <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
-                    Generate PDF
-                  </Button>
-                </div>
-
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center gap-3 mb-3">
-                    <TrendingUp className="w-5 h-5 text-primary" />
-                    <h3 className="font-medium">Trend Analysis</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Analyze trends and patterns in work submissions and performance over time.
-                  </p>
-                  <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
-                    Generate PDF
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleExport}
+                    disabled={isGeneratingPDF || !workHistory.length}
+                  >
+                    {isGeneratingPDF ? (
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    {isGeneratingPDF ? 'Generating...' : 'Generate PDF'}
                   </Button>
                 </div>
               </div>

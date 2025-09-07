@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useHealth, useInfo, useLogout, useFarmerBlockchainData, useFarmerSummary, useFarmerPlantings, useFarmerHarvests } from '@/hooks/use-api';
+import { useHealth, useInfo, useFarmerBlockchainData, useFarmerSummary, useFarmerPlantings, useFarmerHarvests } from '@/hooks/use-api';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,7 +26,6 @@ import {
   Database,
   Globe,
   Leaf,
-  LogOut,
   Network,
   Pickaxe,
   RefreshCw,
@@ -127,7 +126,7 @@ function RecentActivityCard({
           poolerId: planting.poolerId,
           poolerName: planting.poolerName,
           description: stakeAmount !== '0' && stakeAmount !== '0.0000000' 
-            ? `Staked ${parseFloat(stakeAmount).toFixed(4)} XLM` 
+            ? `Staked ${parseFloat(stakeAmount).toFixed(2)} KALE` 
             : `Planted for Block #${planting.blockIndex}`,
           timestamp: new Date(planting.plantedAt || Date.now()),
           status: planting.status || 'unknown',
@@ -139,12 +138,13 @@ function RecentActivityCard({
     const harvests = harvestsData?.items || harvestsData?.harvests || [];
     if (harvests.length > 0) {
       harvests.slice(0, 3).forEach((harvest: any) => {
+        const rewardAmount = harvest.rewardAmountHuman || harvest.amount || '0';
         activities.push({
           id: `harvest-${harvest.id}`,
           type: 'harvest',
           blockIndex: harvest.blockIndex || 'Unknown',
           poolerId: harvest.poolerId,
-          description: `${parseFloat(harvest.amount || '0').toFixed(1)} XLM harvested`,
+          description: `${parseFloat(rewardAmount).toFixed(2)} KALE harvested`,
           timestamp: new Date(harvest.harvestedAt || Date.now()),
           status: harvest.status || 'unknown',
         });
@@ -351,17 +351,6 @@ export default function Dashboard() {
     limit: 10, 
     status: 'all' 
   });
-  const logout = useLogout({
-    onSuccess: () => {
-      // Navigate to landing page after successful logout
-      navigate('/');
-    },
-    onError: (error) => {
-      console.error('Logout failed:', error);
-      // Still navigate to landing page even if logout fails
-      navigate('/');
-    }
-  });
   const [uptime, setUptime] = useState(0);
   const [farmerStatus, setFarmerStatus] = useState<FarmerStatus | null>(null);
   const [farmerLoading, setFarmerLoading] = useState(false);
@@ -373,6 +362,10 @@ export default function Dashboard() {
   const harvestHistory = harvestsData?.items || harvestsData?.harvests || [];
   const analyticsLoading = summaryLoading || plantingsLoading || harvestsLoading;
   const analyticsError = summaryError?.message || plantingsError?.message || harvestsError?.message || null;
+
+  // Use farmer summary API data for calculations instead of recalculating from plantings
+  const totalStaked = farmerSummary?.lifetime?.totalStakedHuman ? parseFloat(farmerSummary.lifetime.totalStakedHuman) : 0;
+  const totalRewards = farmerSummary?.lifetime?.totalRewardsHuman ? parseFloat(farmerSummary.lifetime.totalRewardsHuman) : 0;
 
   // Update uptime display
   useEffect(() => {
@@ -499,16 +492,6 @@ export default function Dashboard() {
             <RefreshCw className={cn("w-4 h-4 mr-2", healthLoading && "animate-spin")} />
             Refresh
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => logout.mutate()}
-            disabled={logout.isPending}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-          >
-            <LogOut className={cn("w-4 h-4 mr-2", logout.isPending && "animate-spin")} />
-            {logout.isPending ? 'Signing out...' : 'Sign Out'}
-          </Button>
         </div>
       </div>
 
@@ -557,7 +540,7 @@ export default function Dashboard() {
             </Alert>
           )}
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Custodial Wallet Public Address */}
             <Card>
               <CardContent className="p-4">
@@ -600,7 +583,7 @@ export default function Dashboard() {
                         <Skeleton className="h-4 w-32" />
                       </div>
                     ) : (
-                      <div className="text-xs text-muted-foreground font-mono break-all">
+                      <div className="text-xs text-muted-foreground font-mono break-all overflow-hidden">
                         {blockchainData?.custodialWallet?.address && blockchainData.custodialWallet.address !== 'N/A' 
                           ? blockchainData.custodialWallet.address 
                           : 'No wallet address'}
@@ -673,7 +656,7 @@ export default function Dashboard() {
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        {blockchainData?.staking?.totalStaked ? `${blockchainData.staking.totalStaked.toFixed(2)} KALE` : 'N/A'}
+                        {totalStaked > 0 ? `${totalStaked.toFixed(2)} KALE` : 'N/A'}
                       </p>
                     )}
                   </div>
@@ -692,7 +675,7 @@ export default function Dashboard() {
         </TabsContent>
 
         <TabsContent value="stakes" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
             {/* Stake Performance Overview */}
             <Card>
               <CardHeader>
@@ -712,24 +695,20 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total Staked:</span>
-                      <span className="font-medium">{formatBalance(farmerSummary.totalStaked?.toString() || '0')} XLM</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Average Stake %:</span>
-                      <span className="font-medium">{formatStakePercentage(farmerSummary.averageStakePercentage || 0)}</span>
+                      <span className="font-medium">{totalStaked.toFixed(2)} KALE</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Success Rate:</span>
-                      <span className="font-medium">{farmerSummary.performance?.successRate?.toFixed(1) || '0.0'}%</span>
+                      <span className="font-medium">{((farmerSummary.lifetime?.successRate || 0) * 100).toFixed(1)}%</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total Blocks:</span>
-                      <span className="font-medium">{farmerSummary.performance?.totalBlocks || '0'}</span>
+                      <span className="font-medium">{farmerSummary.lifetime?.blocksParticipated || '0'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Last Activity:</span>
                       <span className="font-medium">
-                        {farmerSummary.lastActivity ? new Date(farmerSummary.lastActivity).toLocaleString() : 'N/A'}
+                        {farmerSummary.current?.lastStakeBlock ? `Block ${farmerSummary.current.lastStakeBlock}` : 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -783,7 +762,7 @@ export default function Dashboard() {
         </TabsContent>
 
         <TabsContent value="harvest" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
             {/* Harvest Statistics */}
             <Card>
               <CardHeader>
@@ -803,15 +782,7 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total Harvested:</span>
-                      <span className="font-medium">{formatBalance(farmerSummary.totalHarvested?.toString() || '0')} XLM</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Average Reward:</span>
-                      <span className="font-medium">{formatBalance(farmerSummary.performance?.averageReward?.toString() || '0')} XLM</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Plantings:</span>
-                      <span className="font-medium">{farmerSummary.totalPlantings || '0'}</span>
+                      <span className="font-medium">{totalRewards.toFixed(2)} KALE</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Successful:</span>
@@ -846,20 +817,20 @@ export default function Dashboard() {
                 ) : harvestHistory.length > 0 ? (
                   <div className="space-y-3">
                     {harvestHistory.slice(0, 5).map((harvest) => (
-                      <div key={harvest.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                      <div key={harvest.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 rounded-lg bg-muted/50">
                         <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${harvest.status === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
-                          <span className="text-sm">Block #{harvest.blockIndex}</span>
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${harvest.status === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
+                          <span className="text-sm font-medium">Block #{harvest.blockIndex}</span>
                         </div>
-                        <div className="text-right">
+                        <div className="flex flex-col sm:text-right sm:items-end gap-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{formatBalance(harvest.amount?.toString() || '0')} XLM</span>
+                            <span className="text-sm font-medium">{harvest.rewardAmountHuman || harvest.amount || '0'} KALE</span>
                             <Badge className={getStatusColor(harvest.status)}>
                               {harvest.status}
                             </Badge>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(harvest.harvestedAt).toLocaleString()}
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(harvest.harvestedAt).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
@@ -899,27 +870,29 @@ export default function Dashboard() {
               ) : plantingHistory.length > 0 ? (
                 <div className="space-y-3">
                   {plantingHistory.map((planting) => (
-                    <div key={planting.id} className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
-                      <div className={`w-3 h-3 rounded-full ${planting.status === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">Block #{planting.blockIndex}</span>
-                          <Badge className={getStatusColor(planting.status)}>
-                            {planting.status}
-                          </Badge>
+                    <div key={planting.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${planting.status === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-sm">Block #{planting.blockIndex}</span>
+                            <Badge className={getStatusColor(planting.status)}>
+                              {planting.status}
+                            </Badge>
+                          </div>
+                          <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                            Pooler: {planting.poolerId.substring(0, 8)}...
+                            {planting.reward && ` • Reward: ${formatBalance(planting.reward?.toString() || '0')} XLM`}
+                          </p>
+                          {planting.error && (
+                            <p className="text-xs text-red-600 mt-1 break-words">{planting.error}</p>
+                          )}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          Pooler: {planting.poolerId.substring(0, 8)}...
-                          {planting.reward && ` • Reward: ${formatBalance(planting.reward?.toString() || '0')} XLM`}
-                        </p>
-                        {planting.error && (
-                          <p className="text-xs text-red-600 mt-1">{planting.error}</p>
-                        )}
                       </div>
-                      <div className="text-right">
+                      <div className="flex justify-between sm:flex-col sm:text-right sm:items-end">
                         <p className="text-sm font-medium">{formatBalance(planting.stakeAmount?.toString() || '0')} XLM</p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(planting.plantedAt).toLocaleString()}
+                          {new Date(planting.plantedAt).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
