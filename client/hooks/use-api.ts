@@ -49,8 +49,12 @@ export function useHealth(options?: UseQueryOptions<HealthResponse, APIClientErr
   return useQuery({
     queryKey: queryKeys.health,
     queryFn: () => apiClient.getHealth(),
-    staleTime: 30000, // 30 seconds
-    refetchInterval: 60000, // 1 minute
+    staleTime: 90000, // 1.5 minutes
+    refetchInterval: 300000, // 5 minutes - reduce frequency
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
@@ -120,8 +124,10 @@ export function useCheckFunding(
     enabled: !!userId,
     refetchInterval: (query) => {
       // Stop polling if funded
-      return query.state.data?.funded ? false : 5000; // 5 seconds
+      return query.state.data?.funded ? false : 30000; // 30 seconds instead of 5 seconds
     },
+    retry: 3,
+    retryDelay: 1000,
     ...options,
   });
 }
@@ -149,7 +155,7 @@ export function usePoolers(
   return useQuery({
     queryKey: queryKeys.poolers(userId, filters),
     queryFn: () => apiClient.getPoolers(userId, filters),
-    staleTime: 30000, // 30 seconds
+    staleTime: 60000, // 1 minute
     ...options,
   });
 }
@@ -223,8 +229,12 @@ export function usePoolerStatus(
   return useQuery({
     queryKey: queryKeys.poolerStatus,
     queryFn: () => apiClient.getPoolerStatus(),
-    staleTime: 30000, // 30 seconds
-    refetchInterval: 60000, // 1 minute
+    staleTime: 90000, // 1.5 minutes
+    refetchInterval: 300000, // 5 minutes - reduce frequency
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
@@ -290,8 +300,12 @@ export function useFarmerBlockchainData(options?: UseQueryOptions<any, APIClient
   return useQuery({
     queryKey: ['farmer-blockchain-data'],
     queryFn: () => apiClient.getFarmerBlockchainData(),
-    staleTime: 10000, // 10 seconds - blockchain data changes frequently
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    staleTime: 90000, // 1.5 minutes - reduce frequency
+    refetchInterval: 300000, // Auto-refresh every 5 minutes instead of 30 seconds
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
@@ -412,8 +426,12 @@ export function useWalletBalance(address?: string, options?: UseQueryOptions<any
     queryKey: ['wallet-balance', address],
     queryFn: () => apiClient.getWalletBalance(address!),
     enabled: !!address,
-    staleTime: 10000, // 10 seconds - wallet balances change frequently
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    staleTime: 90000, // 1.5 minutes - reduce frequency
+    refetchInterval: 300000, // 5 minutes - reduce frequency
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
@@ -422,8 +440,12 @@ export function useMyWalletBalance(options?: UseQueryOptions<any, APIClientError
   return useQuery({
     queryKey: ['my-wallet-balance'],
     queryFn: () => apiClient.getMyWalletBalance(),
-    staleTime: 10000, // 10 seconds
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    staleTime: 90000, // 1.5 minutes - reduce frequency
+    refetchInterval: 300000, // 5 minutes - reduce frequency
+    retry: 3,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
